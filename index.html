@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gimnasio Pro Funcional</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- MUSICA -->
+    <audio id="musica" src="aderall.mp3" loop></audio>
+
+    <!-- TITULO -->
+    <h1 id="titulo">Gimnasio Pro Funcional</h1>
+
+    <!-- LOGIN -->
+    <div id="login-section" class="card center">
+        <h2>Iniciar sesión</h2>
+        <input type="text" id="username" placeholder="Usuario">
+        <select id="role">
+            <option value="cliente">Cliente</option>
+            <option value="admin">Administrador</option>
+            <option value="entrenador">Entrenador</option>
+        </select>
+        <button onclick="login()">Ingresar</button>
+    </div>
+
+    <!-- CLIENTE -->
+    <div id="cliente-section" class="section card" style="display:none;">
+        <button onclick="volverLogin('cliente')">← Cerrar sesión</button>
+        <h2>Cliente</h2>
+        <button onclick="mostrarReservas()">Ver horas agendadas</button>
+        <button onclick="mostrarCrearReserva()">Crear nueva agenda</button>
+        <button onclick="verProgreso()">Ver progreso</button>
+
+        <div id="crear-reserva" class="form-reserva" style="display:none;">
+            <h3>Crear nueva reserva</h3>
+            <select id="actividad">
+                <option value="Cardio">Cardio</option>
+                <option value="Fuerza">Fuerza</option>
+            </select>
+            <input type="date" id="fecha" min="">
+            <select id="hora"></select>
+            <select id="entrenador">
+                <option value="Ricardo Meruane">Ricardo Meruane</option>
+                <option value="George Harris">George Harris</option>
+            </select>
+            <button onclick="reservarClase()">Reservar y pagar</button>
+        </div>
+
+        <div id="lista-reservas-section" style="display:none;">
+            <h3>Mis reservas</h3>
+            <ul id="lista-reservas"></ul>
+        </div>
+
+        <div id="progreso-section" style="display:none;">
+            <h3>Progreso</h3>
+            <p id="progreso-text"></p>
+        </div>
+    </div>
+
+    <!-- ADMIN -->
+    <div id="admin-section" class="section card" style="display:none;">
+        <button onclick="volverLogin('admin')">← Cerrar sesión</button>
+        <h2>Administrador</h2>
+        <div id="crear-bloque">
+            <h3>Crear bloque</h3>
+            <select id="act-admin">
+                <option value="Cardio">Cardio</option>
+                <option value="Fuerza">Fuerza</option>
+            </select>
+            <input type="date" id="fecha-admin" min="">
+            <select id="hora-admin"></select>
+            <select id="entrenador-admin">
+                <option value="Ricardo Meruane">Ricardo Meruane</option>
+                <option value="George Harris">George Harris</option>
+            </select>
+            <input type="number" id="cupos-admin" placeholder="Cupos">
+            <button onclick="crearBloque()">Crear bloque</button>
+        </div>
+        <div id="lista-bloques">
+            <h3>Bloques creados</h3>
+            <ul id="lista-bloques"></ul>
+        </div>
+    </div>
+
+    <!-- ENTRENADOR -->
+    <div id="entrenador-section" class="section card" style="display:none;">
+        <button onclick="volverLogin('entrenador')">← Cerrar sesión</button>
+        <h2>Entrenador</h2>
+        <ul id="lista-alumnos"></ul>
+    </div>
+
+    <!-- NOTIFICACIONES -->
+    <div id="toasts"></div>
+
+    <!-- BOTON DE MUSICA ABAJO -->
+    <div class="music-control">
+        <button id="musicBtn" onclick="toggleMusic()">🎵 Reproducir / Pausar Música</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

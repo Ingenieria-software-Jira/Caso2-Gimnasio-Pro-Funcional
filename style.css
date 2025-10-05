@@ -1,0 +1,115 @@
+/* Reset y fuente */
+* { margin:0; padding:0; box-sizing:border-box; font-family:'Roboto', sans-serif; }
+body {
+    background: url('Fondo\ Gym.jpeg') no-repeat center center fixed;
+    background-size: cover;
+    position: relative;
+}
+body::before {
+    content:'';
+    position:absolute;
+    top:0; left:0; right:0; bottom:0;
+    background:rgba(0,0,0,0.4);
+    z-index:-1;
+}
+
+/* TITULO ANIMADO RGB */
+#titulo{
+    text-align:center;
+    margin:20px 0;
+    font-size:2.2em;
+    font-weight:bold;
+    animation: rgbColor 3s infinite alternate;
+}
+@keyframes rgbColor{
+    0%{color: rgb(255,0,0);}
+    25%{color: rgb(0,255,0);}
+    50%{color: rgb(0,0,255);}
+    75%{color: rgb(255,255,0);}
+    100%{color: rgb(0,255,255);}
+}
+
+/* Tarjetas y login semi-transparente */
+.card, .section {
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(8px);
+    padding: 25px;
+    border-radius:15px;
+    box-shadow:0 10px 20px rgba(0,0,0,0.2);
+    max-width:450px;
+    margin:20px auto;
+    border:1px solid rgba(255,255,255,0.5);
+    text-align:center;
+}
+
+/* Inputs y selects */
+input, select {
+    width:100%;
+    padding:12px;
+    margin:8px 0;
+    border-radius:8px;
+    border:1px solid rgba(255,255,255,0.5);
+    font-size:16px;
+    background: rgba(255,255,255,0.6);
+    color:#000;
+    outline:none;
+    transition:all 0.3s ease;
+}
+input:focus, select:focus{
+    border-color:#00CFFF;
+    box-shadow:0 0 10px rgba(0,199,255,0.5);
+}
+
+/* Botones */
+button {
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:8px;
+    background: linear-gradient(90deg,#007BFF,#00CFFF);
+    color:white;
+    font-weight:500;
+    cursor:pointer;
+    margin-top:10px;
+    transition:all 0.3s ease;
+}
+button:hover{
+    transform:translateY(-2px);
+    box-shadow:0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Listas */
+ul li{
+    background: rgba(255,255,255,0.6);
+    padding:10px;
+    margin:5px 0;
+    border-radius:8px;
+    border:1px solid rgba(255,255,255,0.5);
+}
+
+/* Toasts */
+#toasts{position:fixed;top:20px;right:20px;z-index:1000;}
+.toast{
+    background:#007BFF;color:#fff;
+    padding:12px 18px;margin-bottom:10px;
+    border-radius:8px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.2);
+    animation:slideIn 0.5s, fadeOut 0.5s 2.5s;
+}
+@keyframes slideIn{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
+@keyframes fadeOut{to{opacity:0;transform:translateX(100%);}}
+.center{display:flex;flex-direction:column;justify-content:center;align-items:center;}
+.section h2, .card h2{margin-bottom:20px;}
+.form-reserva{margin-top:15px;}
+
+/* Botón música abajo */
+.music-control{
+    width:100%;
+    display:flex;
+    justify-content:center;
+    margin:40px 0 20px 0;
+}
+.music-control button{
+    width:200px;
+    background: linear-gradient(90deg,#ff416c,#ff4b2b);
+}
