@@ -1,5 +1,6 @@
 let reservas=[];
 let bloques=[];
+let historialReservas=[]; // Array para guardar el historial completo de reservas
 
 // === LOGIN ===
 function login(){
@@ -83,12 +84,14 @@ function mostrarCrearReserva(){
     document.getElementById('crear-reserva').style.display='block';
     document.getElementById('lista-reservas-section').style.display='none';
     document.getElementById('progreso-section').style.display='none';
+    document.getElementById('historial-section').style.display='none';
 }
 
 function mostrarReservas(){
     document.getElementById('crear-reserva').style.display='none';
     document.getElementById('lista-reservas-section').style.display='block';
     document.getElementById('progreso-section').style.display='none';
+    document.getElementById('historial-section').style.display='none';
     const ul=document.getElementById('lista-reservas');
     ul.innerHTML='';
     reservas.forEach(r=>{
@@ -109,7 +112,52 @@ function verProgreso(){
     document.getElementById('crear-reserva').style.display='none';
     document.getElementById('lista-reservas-section').style.display='none';
     document.getElementById('progreso-section').style.display='block';
+    document.getElementById('historial-section').style.display='none';
     document.getElementById('progreso-text').textContent='Progreso del entrenamiento: ejemplo 50% completado.';
+}
+
+function mostrarHistorial(){
+    document.getElementById('crear-reserva').style.display='none';
+    document.getElementById('lista-reservas-section').style.display='none';
+    document.getElementById('progreso-section').style.display='none';
+    document.getElementById('historial-section').style.display='block';
+    
+    const ul = document.getElementById('lista-historial');
+    ul.innerHTML = '';
+    
+    if (historialReservas.length === 0) {
+        ul.innerHTML = '<li style="text-align: center; color: #666;">No hay reservas en el historial</li>';
+        return;
+    }
+    
+    // Ordenar por fecha de creación (más recientes primero)
+    const historialOrdenado = [...historialReservas].sort((a, b) => 
+        new Date(b.fechaCreacion.split(', ')[0].split('/').reverse().join('-')) - 
+        new Date(a.fechaCreacion.split(', ')[0].split('/').reverse().join('-'))
+    );
+    
+    historialOrdenado.forEach(r => {
+        const li = document.createElement('li');
+        const estadoColor = r.estado === 'activa' ? '#28a745' : '#dc3545';
+        const estadoIcon = r.estado === 'activa' ? '✅' : '❌';
+        
+        li.innerHTML = `
+            <div style="padding: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <strong style="color: ${estadoColor};">${estadoIcon} ${r.estado.toUpperCase()}</strong>
+                    <small style="color: #666;">Creada: ${r.fechaCreacion}</small>
+                </div>
+                <div style="margin-bottom: 5px;">
+                    <strong>${r.fecha} ${r.hora}</strong> - ${r.actividad} con ${r.entrenador}
+                </div>
+                ${r.estado === 'cancelada' ? 
+                    `<small style="color: #666;">Cancelada: ${r.fechaModificacion}</small>` : 
+                    '<small style="color: #28a745;">Reserva activa</small>'
+                }
+            </div>
+        `;
+        ul.appendChild(li);
+    });
 }
 
 function reservarClase(){
@@ -120,8 +168,21 @@ function reservarClase(){
     
     // Generar ID único para la reserva
     const id = Date.now() + Math.random();
+    const fechaCreacion = new Date().toLocaleString('es-ES');
 
-    reservas.push({id, actividad, fecha, hora, entrenador});
+    const reserva = {id, actividad, fecha, hora, entrenador};
+    
+    // Agregar a reservas activas
+    reservas.push(reserva);
+    
+    // Agregar al historial con estado activo
+    historialReservas.push({
+        ...reserva,
+        estado: 'activa',
+        fechaCreacion: fechaCreacion,
+        fechaModificacion: fechaCreacion
+    });
+    
     showToast('Reserva pagada y agendada!');
     mostrarReservas();
 }
@@ -185,10 +246,18 @@ function cancelarReserva(reservaId) {
         return;
     }
     
-    // Eliminar reserva del array
+    // Eliminar reserva del array de reservas activas
     const index = reservas.findIndex(r => r.id == reservaId);
     if (index > -1) {
         reservas.splice(index, 1);
+        
+        // Actualizar estado en el historial
+        const historialIndex = historialReservas.findIndex(r => r.id == reservaId);
+        if (historialIndex > -1) {
+            historialReservas[historialIndex].estado = 'cancelada';
+            historialReservas[historialIndex].fechaModificacion = new Date().toLocaleString('es-ES');
+        }
+        
         showToast('✅ Reserva cancelada exitosamente');
         mostrarReservas(); // Actualizar la lista
     }

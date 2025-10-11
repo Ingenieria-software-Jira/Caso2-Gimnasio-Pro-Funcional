@@ -32,6 +32,7 @@
         <button onclick="mostrarReservas()">Ver horas agendadas</button>
         <button onclick="mostrarCrearReserva()">Crear nueva agenda</button>
         <button onclick="verProgreso()">Ver progreso</button>
+        <button onclick="mostrarHistorial()">Ver historial completo</button>
 
         <div id="crear-reserva" class="form-reserva" style="display:none;">
             <h3>Crear nueva reserva</h3>
@@ -56,6 +57,14 @@
         <div id="progreso-section" style="display:none;">
             <h3>Progreso</h3>
             <p id="progreso-text"></p>
+        </div>
+
+        <div id="historial-section" style="display:none;">
+            <h3>Historial Completo de Reservas</h3>
+            <p style="margin-bottom: 15px; font-size: 0.9em; color: #666;">
+                Aquí puedes ver todas tus reservas para hacer seguimiento de tu progreso
+            </p>
+            <ul id="lista-historial"></ul>
         </div>
     </div>
 
