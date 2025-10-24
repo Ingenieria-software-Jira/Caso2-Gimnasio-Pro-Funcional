@@ -8,25 +8,118 @@ let reservas = [];
 let bloques = [];
 let historialReservas = [];
 
+// === MOSTRAR/OCULTAR SECCIONES DE LOGIN Y REGISTRO ===
+function mostrarRegistro() {
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('registro-section').style.display = 'block';
+}
+
+function volverALogin() {
+    document.getElementById('registro-section').style.display = 'none';
+    document.getElementById('login-section').style.display = 'block';
+    // Limpiar campos de registro
+    document.getElementById('reg-nombre').value = '';
+    document.getElementById('reg-apellido').value = '';
+    document.getElementById('reg-fecha-nacimiento').value = '';
+    document.getElementById('reg-email').value = '';
+    document.getElementById('reg-telefono').value = '';
+    document.getElementById('reg-password').value = '';
+    document.getElementById('reg-password-confirm').value = '';
+}
+
 // === TOGGLE PASSWORD FIELD ===
 function togglePasswordField() {
-    const role = document.getElementById('role').value;
-    const passwordField = document.getElementById('password');
+    // Ya no se usa, pero se mantiene por compatibilidad
+    // Ahora siempre se muestra el campo de contraseña
+}
+
+// === REGISTRO ===
+async function registrarUsuario() {
+    const nombre = document.getElementById('reg-nombre').value.trim();
+    const apellido = document.getElementById('reg-apellido').value.trim();
+    const fechaNacimiento = document.getElementById('reg-fecha-nacimiento').value;
+    const email = document.getElementById('reg-email').value.trim();
+    const telefono = document.getElementById('reg-telefono').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const passwordConfirm = document.getElementById('reg-password-confirm').value;
+    const role = document.getElementById('reg-role').value;
     
-    if (role === 'admin') {
-        passwordField.style.display = 'block';
-    } else {
-        passwordField.style.display = 'none';
+    // Generar username automáticamente: nombre + apellido (sin espacios, en minúsculas)
+    const username = (nombre + apellido).toLowerCase().replace(/\s+/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    
+    // Validaciones
+    if (!nombre || !apellido || !email || !telefono || !password) {
+        showToast('⚠️ Todos los campos son obligatorios');
+        return;
+    }
+    
+    if (!fechaNacimiento) {
+        showToast('⚠️ Debes ingresar tu fecha de nacimiento');
+        return;
+    }
+    
+    if (password !== passwordConfirm) {
+        showToast('⚠️ Las contraseñas no coinciden');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showToast('⚠️ La contraseña debe tener al menos 6 caracteres');
+        return;
+    }
+    
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        showToast('⚠️ Email inválido');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/registro`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                nombre,
+                apellido,
+                fecha_nacimiento: fechaNacimiento,
+                email,
+                telefono,
+                username,
+                password,
+                role
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(`✅ Registro exitoso! Inicia sesión con tu email`);
+            setTimeout(() => volverALogin(), 2000);
+        } else {
+            showToast(`❌ ${data.error || 'Error al registrar usuario'}`);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('❌ Error de conexión con el servidor');
     }
 }
 
 // === LOGIN ===
 async function login() {
     const role = document.getElementById('role').value;
-    const username = document.getElementById('username').value.trim();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('password').value;
     
-    if (!username) {
-        showToast('⚠️ Ingresa un usuario');
+    if (!email) {
+        showToast('⚠️ Ingresa tu email');
+        return;
+    }
+    
+    if (!password) {
+        showToast('⚠️ Ingresa tu contraseña');
         return;
     }
 
@@ -35,19 +128,12 @@ async function login() {
         
         // Login diferente para administradores
         if (role === 'admin') {
-            const password = document.getElementById('password').value;
-            
-            if (!password) {
-                showToast('⚠️ Ingresa la contraseña de administrador');
-                return;
-            }
-            
             response = await fetch(`${API_URL}/admin/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username: email, password })
             });
             
             data = await response.json();
@@ -56,13 +142,13 @@ async function login() {
                 currentUserId = data.admin_id;
             }
         } else {
-            // Login normal para clientes y entrenadores (auto-registro)
+            // Login normal para clientes y entrenadores (con email)
             response = await fetch(`${API_URL}/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ username, role })
+                body: JSON.stringify({ email, password, role })
             });
 
             data = await response.json();
@@ -86,10 +172,10 @@ async function login() {
                 await cargarEntrenadoresParaAdmin();
             } else if (role === 'entrenador') {
                 document.getElementById('entrenador-section').style.display = 'block';
-                await mostrarAlumnosDelServidor(username);
+                await mostrarAlumnosDelServidor(data.username);
             }
             
-            showToast(`✅ Bienvenido ${username}!`);
+            showToast(`✅ Bienvenido ${data.nombre || email}!`);
         } else {
             showToast(`❌ ${data.error || 'Error al iniciar sesión'}`);
         }
@@ -419,6 +505,9 @@ function validarTiempoCancelacion(fechaReserva, horaReserva) {
     return diferenciaHoras >= 2;
 }
 
+// Variable global para almacenar la reserva que se está cancelando
+let reservaACancelar = null;
+
 async function cancelarReserva(reservaId) {
     const reserva = reservas.find(r => r.id == reservaId);
     
@@ -427,28 +516,168 @@ async function cancelarReserva(reservaId) {
         return;
     }
     
-    if (!validarTiempoCancelacion(reserva.fecha, reserva.hora)) {
-        showToast('❌ Petición rechazada: No se puede cancelar con menos de 2 horas de anticipación');
+    // Guardar la reserva para usarla en las funciones del modal
+    reservaACancelar = reserva;
+    
+    // Mostrar modal con información de la reserva
+    document.getElementById('modal-fecha').textContent = reserva.fecha;
+    document.getElementById('modal-hora').textContent = reserva.hora;
+    document.getElementById('modal-actividad').textContent = reserva.actividad;
+    document.getElementById('modal-entrenador').textContent = reserva.entrenador;
+    document.getElementById('modal-cancelacion').style.display = 'block';
+}
+
+function cerrarModalCancelacion() {
+    document.getElementById('modal-cancelacion').style.display = 'none';
+    reservaACancelar = null;
+}
+
+async function confirmarReembolso() {
+    if (!reservaACancelar) {
+        showToast('Error: No hay reserva seleccionada');
+        return;
+    }
+    
+    // Validar tiempo de cancelación
+    if (!validarTiempoCancelacion(reservaACancelar.fecha, reservaACancelar.hora)) {
+        showToast('❌ No se puede obtener reembolso: Debes cancelar con al menos 2 horas de anticipación');
+        cerrarModalCancelacion();
         return;
     }
 
     try {
-        const response = await fetch(`${API_URL}/reservas/${reservaId}`, {
+        const response = await fetch(`${API_URL}/reservas/${reservaACancelar.id}`, {
             method: 'DELETE'
         });
 
         const data = await response.json();
 
         if (data.success) {
-            showToast('✅ Reserva cancelada exitosamente');
+            showToast('✅ Reserva cancelada. El reembolso se procesará en 24-48 horas');
+            cerrarModalCancelacion();
             await mostrarReservas();
             await cargarHistorialDelServidor();
         } else {
-            showToast('Error al cancelar reserva');
+            showToast('❌ Error al cancelar reserva');
         }
     } catch (error) {
         console.error('Error:', error);
-        showToast('Error de conexión con el servidor');
+        showToast('❌ Error de conexión con el servidor');
+    }
+}
+
+function mostrarReagendar() {
+    // Ocultar modal de cancelación y mostrar modal de reagendar
+    document.getElementById('modal-cancelacion').style.display = 'none';
+    document.getElementById('modal-reagendar').style.display = 'block';
+    
+    // Configurar valores del modal de reagendar
+    const hoy = new Date();
+    const hoyStr = hoy.toISOString().split('T')[0];
+    document.getElementById('reagendar-fecha').min = hoyStr;
+    
+    // Preseleccionar la misma actividad
+    if (reservaACancelar) {
+        document.getElementById('reagendar-actividad').value = reservaACancelar.actividad;
+    }
+    
+    // Configurar el listener para el cambio de fecha
+    const fechaInput = document.getElementById('reagendar-fecha');
+    fechaInput.addEventListener('change', () => llenarHorasReagendar());
+}
+
+function llenarHorasReagendar() {
+    const select = document.getElementById('reagendar-hora');
+    select.innerHTML = '';
+    const fechaSeleccionada = new Date(document.getElementById('reagendar-fecha').value);
+    const ahora = new Date();
+    const horaActual = ahora.getHours();
+    const minutoActual = ahora.getMinutes();
+
+    for (let h = 10; h <= 21; h++) {
+        if (fechaSeleccionada.toDateString() === ahora.toDateString()) {
+            if (h < horaActual || (h === horaActual && minutoActual > 0)) continue;
+        }
+        const option = document.createElement('option');
+        option.value = `${h}:00`;
+        option.textContent = `${h}:00`;
+        select.appendChild(option);
+    }
+}
+
+function volverACancelacion() {
+    document.getElementById('modal-reagendar').style.display = 'none';
+    document.getElementById('modal-cancelacion').style.display = 'block';
+}
+
+async function confirmarReagendar() {
+    if (!reservaACancelar) {
+        showToast('Error: No hay reserva seleccionada');
+        return;
+    }
+    
+    const nuevaActividad = document.getElementById('reagendar-actividad').value;
+    const nuevaFecha = document.getElementById('reagendar-fecha').value;
+    const nuevaHora = document.getElementById('reagendar-hora').value;
+    const nuevoEntrenador = document.getElementById('reagendar-entrenador').value;
+    
+    if (!nuevaFecha || !nuevaHora) {
+        showToast('⚠️ Debes seleccionar fecha y hora');
+        return;
+    }
+    
+    try {
+        // Primero cancelar la reserva actual
+        const deleteResponse = await fetch(`${API_URL}/reservas/${reservaACancelar.id}`, {
+            method: 'DELETE'
+        });
+        
+        const deleteData = await deleteResponse.json();
+        
+        if (!deleteData.success) {
+            showToast('❌ Error al cancelar la reserva anterior');
+            return;
+        }
+        
+        // Luego buscar el bloque para la nueva reserva
+        const bloquesResponse = await fetch(`${API_URL}/bloques`);
+        const bloques = await bloquesResponse.json();
+        
+        const bloqueNuevo = bloques.find(b => 
+            b.actividad === nuevaActividad &&
+            b.fecha === nuevaFecha &&
+            b.hora.substring(0, 5) === nuevaHora &&
+            b.nombre_entrenador === nuevoEntrenador
+        );
+        
+        if (!bloqueNuevo) {
+            showToast('❌ No hay cupos disponibles para esa fecha/hora. Se canceló tu reserva anterior.');
+            document.getElementById('modal-reagendar').style.display = 'none';
+            await mostrarReservas();
+            await cargarHistorialDelServidor();
+            reservaACancelar = null;
+            return;
+        }
+        
+        // Guardar datos en sessionStorage para la nueva reserva
+        sessionStorage.setItem('reservaActividad', nuevaActividad);
+        sessionStorage.setItem('reservaFecha', nuevaFecha);
+        sessionStorage.setItem('reservaHora', nuevaHora);
+        sessionStorage.setItem('reservaEntrenador', nuevoEntrenador);
+        sessionStorage.setItem('bloque_id', bloqueNuevo.id);
+        
+        // Cerrar modal y redirigir a confirmar-reserva
+        document.getElementById('modal-reagendar').style.display = 'none';
+        reservaACancelar = null;
+        
+        showToast('✅ Redirigiendo a la página de pago...');
+        setTimeout(() => {
+            window.location.href = '/confirmar-reserva.html';
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('❌ Error de conexión con el servidor');
     }
 }
 

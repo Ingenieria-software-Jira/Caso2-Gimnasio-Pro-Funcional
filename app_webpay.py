@@ -42,28 +42,49 @@ def get_db_connection():
     )
 
 # ==================== USUARIOS ====================
-@app.route('/api/login', methods=['POST'])
-def login():
+@app.route('/api/registro', methods=['POST'])
+def registro():
+    """Registro de nuevos usuarios"""
     try:
         data = request.json
+        nombre = data.get('nombre')
+        apellido = data.get('apellido')
+        fecha_nacimiento = data.get('fecha_nacimiento')
+        email = data.get('email')
+        telefono = data.get('telefono')
         username = data.get('username')
+        password = data.get('password')
         role = data.get('role')
         
-        if not username or not role:
-            return jsonify({'error': 'Usuario y rol son requeridos'}), 400
+        # Validaciones
+        if not all([nombre, apellido, email, telefono, username, password, role]):
+            return jsonify({'error': 'Todos los campos son obligatorios'}), 400
         
         connection = get_db_connection()
         cur = connection.cursor()
         
-        cur.execute("SELECT * FROM usuarios WHERE username = %s AND rol = %s", (username, role))
-        user = cur.fetchone()
+        # Verificar si el username ya existe
+        cur.execute("SELECT * FROM usuarios WHERE username = %s", (username,))
+        if cur.fetchone():
+            cur.close()
+            connection.close()
+            return jsonify({'error': 'El nombre de usuario ya está en uso'}), 400
         
-        if not user:
-            cur.execute("INSERT INTO usuarios (username, rol) VALUES (%s, %s)", (username, role))
-            connection.commit()
-            user_id = cur.lastrowid
-        else:
-            user_id = user['id']
+        # Verificar si el email ya existe (solo si no es NULL)
+        cur.execute("SELECT * FROM usuarios WHERE email = %s AND email IS NOT NULL", (email,))
+        if cur.fetchone():
+            cur.close()
+            connection.close()
+            return jsonify({'error': 'El email ya está registrado'}), 400
+        
+        # Insertar nuevo usuario
+        cur.execute("""
+            INSERT INTO usuarios (username, nombre, apellido, email, password, telefono, fecha_nacimiento, rol)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (username, nombre, apellido, email, password, telefono, fecha_nacimiento, role))
+        
+        connection.commit()
+        user_id = cur.lastrowid
         
         cur.close()
         connection.close()
@@ -71,8 +92,45 @@ def login():
         return jsonify({
             'success': True,
             'user_id': user_id,
-            'username': username,
-            'role': role
+            'message': 'Usuario registrado exitosamente'
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        role = data.get('role')
+        
+        if not email or not password or not role:
+            return jsonify({'error': 'Email, contraseña y rol son requeridos'}), 400
+        
+        connection = get_db_connection()
+        cur = connection.cursor()
+        
+        # Buscar usuario con email, password y rol
+        cur.execute("SELECT * FROM usuarios WHERE email = %s AND password = %s AND rol = %s", 
+                   (email, password, role))
+        user = cur.fetchone()
+        
+        cur.close()
+        connection.close()
+        
+        if not user:
+            return jsonify({'error': 'Email, contraseña o rol incorrectos'}), 401
+        
+        return jsonify({
+            'success': True,
+            'user_id': user['id'],
+            'username': user.get('username', ''),
+            'email': email,
+            'role': role,
+            'nombre': user.get('nombre', ''),
+            'apellido': user.get('apellido', '')
         }), 200
         
     except Exception as e:

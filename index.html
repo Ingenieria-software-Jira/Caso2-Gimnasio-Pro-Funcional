@@ -13,14 +13,33 @@
     <!-- LOGIN -->
     <div id="login-section" class="card center">
         <h2>Iniciar sesión</h2>
-        <input type="text" id="username" placeholder="Usuario">
-        <input type="password" id="password" placeholder="Contraseña (solo admin)" style="display:none;">
+        <input type="email" id="login-email" placeholder="Email">
+        <input type="password" id="password" placeholder="Contraseña">
         <select id="role" onchange="togglePasswordField()">
             <option value="cliente">Cliente</option>
             <option value="admin">Administrador</option>
             <option value="entrenador">Entrenador</option>
         </select>
         <button onclick="login()">Ingresar</button>
+        <button onclick="mostrarRegistro()" class="btn-secondary">Crear cuenta nueva</button>
+    </div>
+
+    <!-- REGISTRO -->
+    <div id="registro-section" class="card center" style="display:none;">
+        <h2>Crear cuenta</h2>
+        <input type="text" id="reg-nombre" placeholder="Nombre">
+        <input type="text" id="reg-apellido" placeholder="Apellido">
+        <input type="date" id="reg-fecha-nacimiento" placeholder="Fecha de nacimiento">
+        <input type="email" id="reg-email" placeholder="Email">
+        <input type="tel" id="reg-telefono" placeholder="Teléfono">
+        <input type="password" id="reg-password" placeholder="Contraseña">
+        <input type="password" id="reg-password-confirm" placeholder="Confirmar contraseña">
+        <select id="reg-role">
+            <option value="cliente">Cliente</option>
+            <option value="entrenador">Entrenador</option>
+        </select>
+        <button onclick="registrarUsuario()">Registrarse</button>
+        <button onclick="volverALogin()" class="btn-secondary">Volver al login</button>
     </div>
 
     <!-- CLIENTE -->
@@ -124,6 +143,52 @@
 
     <!-- NOTIFICACIONES -->
     <div id="toasts"></div>
+
+    <!-- MODAL DE CANCELACIÓN -->
+    <div id="modal-cancelacion" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>⚠️ ¿Estás seguro que deseas cancelar esta reserva?</h3>
+            <p><strong>Fecha:</strong> <span id="modal-fecha"></span></p>
+            <p><strong>Hora:</strong> <span id="modal-hora"></span></p>
+            <p><strong>Actividad:</strong> <span id="modal-actividad"></span></p>
+            <p><strong>Entrenador:</strong> <span id="modal-entrenador"></span></p>
+            
+            <div class="modal-info">
+                <p>⏰ <strong>Recuerda:</strong> Debes cancelar con al menos 2 horas de anticipación para obtener reembolso.</p>
+            </div>
+            
+            <h4>¿Qué deseas hacer?</h4>
+            <div class="modal-buttons">
+                <button onclick="confirmarReembolso()" class="btn-reembolso">💰 Solicitar Reembolso</button>
+                <button onclick="mostrarReagendar()" class="btn-reagendar">📅 Reagendar</button>
+                <button onclick="cerrarModalCancelacion()" class="btn-cancelar">❌ Cancelar operación</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE REAGENDAR -->
+    <div id="modal-reagendar" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h3>📅 Reagendar Reserva</h3>
+            <p>Selecciona una nueva fecha y hora:</p>
+            
+            <select id="reagendar-actividad">
+                <option value="Cardio">Cardio</option>
+                <option value="Fuerza">Fuerza</option>
+            </select>
+            <input type="date" id="reagendar-fecha" min="">
+            <select id="reagendar-hora"></select>
+            <select id="reagendar-entrenador">
+                <option value="Ricardo Meruane">Ricardo Meruane</option>
+                <option value="George Harris">George Harris</option>
+            </select>
+            
+            <div class="modal-buttons">
+                <button onclick="confirmarReagendar()" class="btn-confirmar">✅ Confirmar Reagendado</button>
+                <button onclick="volverACancelacion()" class="btn-secondary">← Volver</button>
+            </div>
+        </div>
+    </div>
 
     <script src="script_integrado.js"></script>
 </body>
