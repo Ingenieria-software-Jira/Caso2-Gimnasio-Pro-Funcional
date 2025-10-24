@@ -627,19 +627,7 @@ async function confirmarReagendar() {
     }
     
     try {
-        // Primero cancelar la reserva actual
-        const deleteResponse = await fetch(`${API_URL}/reservas/${reservaACancelar.id}`, {
-            method: 'DELETE'
-        });
-        
-        const deleteData = await deleteResponse.json();
-        
-        if (!deleteData.success) {
-            showToast('❌ Error al cancelar la reserva anterior');
-            return;
-        }
-        
-        // Luego buscar el bloque para la nueva reserva
+        // PRIMERO: Verificar que existe disponibilidad ANTES de cancelar
         const bloquesResponse = await fetch(`${API_URL}/bloques`);
         const bloques = await bloquesResponse.json();
         
@@ -651,26 +639,40 @@ async function confirmarReagendar() {
         );
         
         if (!bloqueNuevo) {
-            showToast('❌ No hay cupos disponibles para esa fecha/hora. Se canceló tu reserva anterior.');
-            document.getElementById('modal-reagendar').style.display = 'none';
-            await mostrarReservas();
-            await cargarHistorialDelServidor();
-            reservaACancelar = null;
+            showToast('❌ No hay cupos disponibles para esa fecha/hora');
             return;
         }
         
-        // Guardar datos en sessionStorage para la nueva reserva
+        if (bloqueNuevo.cupos_disponibles <= 0) {
+            showToast('❌ No quedan cupos disponibles para ese horario');
+            return;
+        }
+        
+        // SEGUNDO: Si hay disponibilidad, cancelar la reserva actual
+        const deleteResponse = await fetch(`${API_URL}/reservas/${reservaACancelar.id}`, {
+            method: 'DELETE'
+        });
+        
+        const deleteData = await deleteResponse.json();
+        
+        if (!deleteData.success) {
+            showToast('❌ Error al cancelar la reserva anterior');
+            return;
+        }
+        
+        // TERCERO: Guardar datos en sessionStorage para la nueva reserva
         sessionStorage.setItem('reservaActividad', nuevaActividad);
         sessionStorage.setItem('reservaFecha', nuevaFecha);
         sessionStorage.setItem('reservaHora', nuevaHora);
         sessionStorage.setItem('reservaEntrenador', nuevoEntrenador);
         sessionStorage.setItem('bloque_id', bloqueNuevo.id);
+        sessionStorage.setItem('esReagendamiento', 'true'); // Marcar como reagendamiento
         
         // Cerrar modal y redirigir a confirmar-reserva
         document.getElementById('modal-reagendar').style.display = 'none';
         reservaACancelar = null;
         
-        showToast('✅ Redirigiendo a la página de pago...');
+        showToast('✅ Redirigiendo a confirmar nueva reserva...');
         setTimeout(() => {
             window.location.href = '/confirmar-reserva.html';
         }, 1000);
