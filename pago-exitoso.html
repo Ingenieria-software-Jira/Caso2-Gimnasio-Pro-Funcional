@@ -55,7 +55,7 @@
         <h1 class="success-title">¡Pago Exitoso!</h1>
         <p class="success-message">
             Tu clase ha sido reservada y pagada correctamente.<br>
-            <strong>Monto: $1 CLP</strong>
+            <strong id="monto-pagado">Monto: Cargando...</strong>
         </p>
         <p style="color: #666; margin-bottom: 30px;">
             Recibirás un comprobante en tu email.<br>
@@ -63,6 +63,50 @@
         </p>
         <a href="/" class="back-button">Volver al Inicio</a>
     </div>
+
+    <script>
+        // Obtener el precio real de la transacción
+        async function cargarMontoPagado() {
+            try {
+                // Obtener el reserva_id de la URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const reservaId = urlParams.get('reserva_id');
+                
+                if (reservaId) {
+                    // Obtener información de la transacción
+                    const response = await fetch(`http://localhost:5000/api/transaccion/${reservaId}`);
+                    const data = await response.json();
+                    
+                    if (data.amount) {
+                        document.getElementById('monto-pagado').textContent = `Monto: $${data.amount} CLP`;
+                    } else {
+                        // Si no se puede obtener, mostrar el precio actual de configuración
+                        const configResponse = await fetch('http://localhost:5000/api/admin/configuracion/precio_reserva');
+                        const configData = await configResponse.json();
+                        document.getElementById('monto-pagado').textContent = `Monto: $${configData.valor} CLP`;
+                    }
+                } else {
+                    // Si no hay reserva_id, obtener el precio de configuración
+                    const response = await fetch('http://localhost:5000/api/admin/configuracion/precio_reserva');
+                    const data = await response.json();
+                    document.getElementById('monto-pagado').textContent = `Monto: $${data.valor} CLP`;
+                }
+            } catch (error) {
+                console.error('Error al cargar monto:', error);
+                // Fallback: mostrar precio de configuración
+                try {
+                    const response = await fetch('http://localhost:5000/api/admin/configuracion/precio_reserva');
+                    const data = await response.json();
+                    document.getElementById('monto-pagado').textContent = `Monto: $${data.valor} CLP`;
+                } catch {
+                    document.getElementById('monto-pagado').textContent = 'Monto: $1 CLP';
+                }
+            }
+        }
+        
+        // Cargar el monto cuando la página cargue
+        window.addEventListener('DOMContentLoaded', cargarMontoPagado);
+    </script>
 </body>
 </html>
 

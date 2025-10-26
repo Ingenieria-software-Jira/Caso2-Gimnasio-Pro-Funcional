@@ -193,6 +193,41 @@ def admin_login():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/transaccion/<int:reserva_id>', methods=['GET'])
+def get_transaccion_by_reserva(reserva_id):
+    """
+    Obtiene información de la transacción asociada a una reserva
+    Usado para mostrar el monto real pagado en pago-exitoso.html
+    """
+    try:
+        connection = get_db_connection()
+        cur = connection.cursor()
+        
+        cur.execute("""
+            SELECT amount, buy_order, estado, fecha_creacion 
+            FROM transacciones_webpay 
+            WHERE reserva_id = %s 
+            ORDER BY fecha_creacion DESC 
+            LIMIT 1
+        """, (reserva_id,))
+        
+        transaccion = cur.fetchone()
+        cur.close()
+        connection.close()
+        
+        if not transaccion:
+            return jsonify({'error': 'Transacción no encontrada'}), 404
+        
+        return jsonify({
+            'amount': transaccion['amount'],
+            'buy_order': transaccion['buy_order'],
+            'estado': transaccion['estado'],
+            'fecha': str(transaccion['fecha_creacion']) if transaccion['fecha_creacion'] else None
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/admin/configuracion/<nombre>', methods=['GET'])
 def obtener_configuracion(nombre):
     """Obtener valor de configuración"""
@@ -910,19 +945,59 @@ def get_cupos():
 
 @app.route('/api/bloques', methods=['GET'])
 def get_bloques():
+    """
+    Obtiene lista de bloques disponibles con filtros opcionales
+    
+    Query Parameters:
+        - fecha (str, opcional): Filtra por fecha específica (YYYY-MM-DD)
+        - actividad (str, opcional): Filtra por actividad ('Cardio' o 'Fuerza')
+        - entrenador (str, opcional): Filtra por nombre del entrenador
+        
+    Returns:
+        JSON: Lista de bloques con información del entrenador
+        
+    Example:
+        GET /api/bloques?fecha=2025-10-28&actividad=Cardio
+    """
     try:
-        connection = get_db_connection()
-        cur = connection.cursor()
-        cur.execute("""
+        # Obtener parámetros de filtro opcionales
+        fecha_filtro = request.args.get('fecha')
+        actividad_filtro = request.args.get('actividad')
+        entrenador_filtro = request.args.get('entrenador')
+        
+        # Construir query base
+        query = """
             SELECT b.*, e.nombre as nombre_entrenador 
             FROM bloques b
             LEFT JOIN entrenadores e ON b.entrenador_id = e.id
-            ORDER BY b.fecha, b.hora
-        """)
+            WHERE 1=1
+        """
+        params = []
+        
+        # Agregar filtros dinámicamente
+        if fecha_filtro:
+            query += " AND b.fecha = %s"
+            params.append(fecha_filtro)
+            
+        if actividad_filtro:
+            query += " AND b.actividad = %s"
+            params.append(actividad_filtro)
+            
+        if entrenador_filtro:
+            query += " AND e.nombre = %s"
+            params.append(entrenador_filtro)
+        
+        query += " ORDER BY b.fecha, b.hora"
+        
+        # Ejecutar query
+        connection = get_db_connection()
+        cur = connection.cursor()
+        cur.execute(query, params)
         bloques = cur.fetchall()
         cur.close()
         connection.close()
         
+        # Convertir objetos datetime a strings
         for bloque in bloques:
             if 'hora' in bloque and bloque['hora']:
                 bloque['hora'] = str(bloque['hora'])
@@ -1020,8 +1095,22 @@ def get_alumnos_entrenador(nombre):
 @app.route('/api/reservas/<int:reserva_id>/reagendar', methods=['POST'])
 def reagendar_reserva(reserva_id):
     """
-    Endpoint específico para reagendamiento que cancela la reserva vieja,
-    crea una nueva y envía notificación de reagendamiento
+    Endpoint específico para reagendamiento con recálculo de tarifas
+    
+    Funcionalidad:
+    - Cancela la reserva actual
+    - Crea una nueva reserva
+    - Calcula diferencia de precio si cambió la tarifa
+    - Envía notificaciones
+    - Registra cambio de precio en historial
+    
+    Request Body:
+        - nuevo_bloque_id: ID del bloque o 'sin_entrenador'
+        - usuario_id: ID del usuario
+        - (Adicionales si es sin entrenador: actividad, fecha, hora)
+        
+    Returns:
+        JSON con información del reagendamiento y diferencia de precio
     """
     try:
         data = request.json
@@ -1052,7 +1141,25 @@ def reagendar_reserva(reserva_id):
             connection.close()
             return jsonify({'error': 'Reserva no encontrada'}), 404
         
-        # 2. Obtener datos del nuevo bloque
+        # RECÁLCULO DE TARIFAS
+        # 2. Obtener precio original de la reserva
+        cur.execute("""
+            SELECT amount FROM transacciones_webpay 
+            WHERE reserva_id = %s 
+            ORDER BY fecha_creacion DESC 
+            LIMIT 1
+        """, (reserva_id,))
+        transaccion_original = cur.fetchone()
+        precio_original = transaccion_original['amount'] if transaccion_original else 0
+        
+        # 3. Obtener precio actual
+        precio_actual = obtener_precio_reserva()
+        
+        # 4. Calcular diferencia
+        diferencia_precio = precio_actual - precio_original
+        hay_cambio_precio = diferencia_precio != 0
+        
+        # 5. Obtener datos del nuevo bloque
         if nuevo_bloque_id == 'sin_entrenador':
             # Caso sin entrenador
             nueva_actividad = data.get('actividad')
@@ -1084,20 +1191,36 @@ def reagendar_reserva(reserva_id):
             nuevo_entrenador_id = nuevo_bloque['entrenador_id']
             nuevo_entrenador_nombre = nuevo_bloque['nombre_entrenador']
         
-        # 3. Cancelar reserva vieja
+        # 6. Cancelar reserva vieja
         cur.execute("""
             UPDATE reservas 
             SET estado = 'cancelada', fecha_modificacion = NOW()
             WHERE id = %s
         """, (reserva_id,))
         
-        # 4. Crear nueva reserva con estado 'activa' (ya pagó antes)
+        # 7. Crear nueva reserva con estado 'activa' (ya pagó antes)
         cur.execute("""
             INSERT INTO reservas (usuario_id, actividad, fecha, hora, entrenador_id, estado, fecha_creacion)
             VALUES (%s, %s, %s, %s, %s, 'activa', NOW())
         """, (usuario_id, nueva_actividad, nueva_fecha, nueva_hora, nuevo_entrenador_id))
         
         nueva_reserva_id = cur.lastrowid
+        
+        # 8. Registrar cambio de precio en historial (si hubo cambio)
+        if hay_cambio_precio:
+            cur.execute("""
+                INSERT INTO historial_cambios_precio (
+                    reserva_id_original,
+                    reserva_id_nueva,
+                    precio_original,
+                    precio_nuevo,
+                    diferencia,
+                    fecha_cambio
+                ) VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (reserva_id, nueva_reserva_id, precio_original, precio_actual, diferencia_precio))
+            
+            print(f"[INFO] Cambio de precio registrado: ${precio_original} -> ${precio_actual} (diferencia: {diferencia_precio})")
+        
         connection.commit()
         
         # 5. Enviar notificación de reagendamiento
@@ -1130,11 +1253,27 @@ def reagendar_reserva(reserva_id):
         cur.close()
         connection.close()
         
-        return jsonify({
+        # Preparar respuesta con información de cambio de precio
+        response_data = {
             'success': True,
             'message': 'Reserva reagendada exitosamente',
-            'nueva_reserva_id': nueva_reserva_id
-        }), 200
+            'nueva_reserva_id': nueva_reserva_id,
+            'cambio_precio': {
+                'hubo_cambio': hay_cambio_precio,
+                'precio_original': precio_original,
+                'precio_actual': precio_actual,
+                'diferencia': diferencia_precio
+            }
+        }
+        
+        # Agregar mensaje informativo sobre el cambio de precio
+        if hay_cambio_precio:
+            if diferencia_precio > 0:
+                response_data['mensaje_precio'] = f"Nota: El precio actual (${ precio_actual} CLP) es mayor al original (${precio_original} CLP). Diferencia: ${diferencia_precio} CLP."
+            else:
+                response_data['mensaje_precio'] = f"Nota: El precio actual (${precio_actual} CLP) es menor al original (${precio_original} CLP). Diferencia: ${abs(diferencia_precio)} CLP."
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

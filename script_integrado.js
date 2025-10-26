@@ -741,7 +741,25 @@ async function confirmarReagendar() {
         const data = await response.json();
         
         if (data.success) {
-            showToast('✅ Reserva reagendada exitosamente. Te enviamos confirmación por email/SMS.');
+            // Mensaje de éxito
+            let mensaje = '✅ Reserva reagendada exitosamente.';
+            
+            // Agregar información de cambio de precio si existe
+            if (data.cambio_precio && data.cambio_precio.hubo_cambio) {
+                const diferencia = data.cambio_precio.diferencia;
+                const precioOriginal = data.cambio_precio.precio_original;
+                const precioActual = data.cambio_precio.precio_actual;
+                
+                if (diferencia > 0) {
+                    mensaje += ` ⚠️ El precio aumentó de $${precioOriginal} a $${precioActual} CLP (diferencia: +$${diferencia}).`;
+                } else {
+                    mensaje += ` ℹ️ El precio bajó de $${precioOriginal} a $${precioActual} CLP (diferencia: -$${Math.abs(diferencia)}).`;
+                }
+            }
+            
+            mensaje += ' Te enviamos confirmación por email/SMS.';
+            
+            showToast(mensaje);
             cerrarTodosLosModales();
             reservaACancelar = null;
             await mostrarReservas();
