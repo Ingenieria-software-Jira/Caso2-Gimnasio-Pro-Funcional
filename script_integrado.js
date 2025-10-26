@@ -240,16 +240,36 @@ function actualizarDropdownsCliente() {
     const horaSelect = document.getElementById('hora');
     const entrenadorSelect = document.getElementById('entrenador');
     
-    if (!bloquesDisponibles || bloquesDisponibles.length === 0) {
-        console.log('No hay bloques disponibles aún');
-        return;
-    }
-    
     const actividadVal = actividadSelect.value;
     const fechaVal = fechaSelect.value;
     const entrenadorVal = entrenadorSelect.value;
     
     console.log('Actualizando dropdowns con:', { actividadVal, fechaVal, entrenadorVal });
+    
+    // Si el usuario selecciona "Sin entrenador", mostrar horas del gimnasio (8:00-21:00)
+    if (actividadVal && fechaVal && entrenadorVal === 'Sin entrenador') {
+        console.log('Modo: Sin entrenador - Mostrando todas las horas del gimnasio');
+        const horasGimnasio = [
+            '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', 
+            '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', 
+            '20:00', '21:00'
+        ];
+        
+        horaSelect.innerHTML = '';
+        horasGimnasio.forEach(h => {
+            const option = document.createElement('option');
+            option.value = h;
+            option.textContent = h;
+            horaSelect.appendChild(option);
+        });
+        return;
+    }
+    
+    // Si el usuario selecciona un entrenador específico, filtrar por sus horas
+    if (!bloquesDisponibles || bloquesDisponibles.length === 0) {
+        console.log('No hay bloques disponibles aún');
+        return;
+    }
     
     // Filtrar bloques según selecciones
     let bloquesFiltrados = bloquesDisponibles.filter(b => b.cupos_disponibles > 0);
@@ -260,17 +280,16 @@ function actualizarDropdownsCliente() {
     if (fechaVal) {
         bloquesFiltrados = bloquesFiltrados.filter(b => b.fecha === fechaVal);
     }
-    if (entrenadorVal) {
+    if (entrenadorVal && entrenadorVal !== 'Sin entrenador') {
         bloquesFiltrados = bloquesFiltrados.filter(b => b.nombre_entrenador === entrenadorVal);
     }
     
     console.log('Bloques filtrados:', bloquesFiltrados);
     
-    // Actualizar opciones de hora basado en bloques disponibles
-    // Solo necesitamos actividad, fecha y entrenador para filtrar horas
+    // Actualizar opciones de hora basado en bloques disponibles del entrenador
     if (actividadVal && fechaVal && entrenadorVal) {
         const horasDisponibles = [...new Set(bloquesFiltrados.map(b => b.hora.substring(0, 5)))];
-        console.log('Horas disponibles:', horasDisponibles);
+        console.log('Horas disponibles del entrenador:', horasDisponibles);
         horaSelect.innerHTML = '';
         if (horasDisponibles.length === 0) {
             const option = document.createElement('option');
@@ -443,31 +462,45 @@ async function reservarClase() {
         showToast('❌ Por favor selecciona una fecha');
         return;
     }
-    if (!hora || hora === '' || hora === 'No hay horas disponibles') {
-        showToast('❌ No hay horas disponibles para la combinación seleccionada. Intenta con otra fecha.');
+    if (!entrenador || entrenador === '') {
+        showToast('❌ Por favor selecciona si quieres entrenar solo o con un entrenador');
         return;
     }
-    if (!entrenador) {
-        showToast('❌ Por favor selecciona un entrenador');
+    if (!hora || hora === '' || hora === 'No hay horas disponibles') {
+        showToast('❌ No hay horas disponibles para la combinación seleccionada. Intenta con otra fecha.');
         return;
     }
 
     try {
         console.log('Intentando reservar:', { actividad, fecha, hora, entrenador });
         
-        // Buscar el bloque correspondiente en los bloques ya cargados
-        const bloqueSeleccionado = bloquesDisponibles.find(b => 
-            b.fecha === fecha && 
-            b.hora.substring(0, 5) === hora && 
-            b.nombre_entrenador === entrenador &&
-            b.actividad === actividad
-        );
+        let bloqueSeleccionado = null;
+        
+        // Si es "Sin entrenador", crear un bloque temporal
+        if (entrenador === 'Sin entrenador') {
+            console.log('Modo: Sin entrenador - Creando bloque temporal');
+            bloqueSeleccionado = {
+                id: 'sin_entrenador', // ID especial para indicar que es sin entrenador
+                fecha: fecha,
+                hora: hora + ':00',
+                actividad: actividad,
+                nombre_entrenador: 'Sin entrenador'
+            };
+        } else {
+            // Buscar el bloque correspondiente en los bloques ya cargados
+            bloqueSeleccionado = bloquesDisponibles.find(b => 
+                b.fecha === fecha && 
+                b.hora.substring(0, 5) === hora && 
+                b.nombre_entrenador === entrenador &&
+                b.actividad === actividad
+            );
 
-        console.log('Bloque encontrado:', bloqueSeleccionado);
+            console.log('Bloque encontrado:', bloqueSeleccionado);
 
-        if (!bloqueSeleccionado) {
-            showToast('❌ No se encontró la clase. Por favor intenta con una fecha que tenga clases disponibles (ej: 25-10-2025)');
-            return;
+            if (!bloqueSeleccionado) {
+                showToast('❌ No se encontró la clase. Por favor intenta con otra fecha que tenga clases disponibles');
+                return;
+            }
         }
 
         // Guardar datos de la reserva en sessionStorage
@@ -554,13 +587,19 @@ async function confirmarReembolso() {
 
     try {
         const response = await fetch(`${API_URL}/reservas/${reservaACancelar.id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                motivo: 'reembolso'  // Indicar que es solicitud de reembolso
+            })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            showToast('✅ Reserva cancelada. El reembolso se procesará en 24-48 horas');
+            showToast('✅ Reserva cancelada. El reembolso se procesará en 5-7 días hábiles');
             cerrarModalCancelacion();
             await mostrarReservas();
             await cargarHistorialDelServidor();
@@ -647,61 +686,69 @@ async function confirmarReagendar() {
     const nuevaHora = document.getElementById('reagendar-hora').value;
     const nuevoEntrenador = document.getElementById('reagendar-entrenador').value;
     
-    if (!nuevaFecha || !nuevaHora) {
-        showToast('⚠️ Debes seleccionar fecha y hora');
+    if (!nuevaFecha || !nuevaHora || !nuevoEntrenador) {
+        showToast('⚠️ Debes seleccionar fecha, hora y entrenador');
         return;
     }
     
     try {
-        // PRIMERO: Verificar que existe disponibilidad ANTES de cancelar
+        console.log('Iniciando reagendamiento...');
+        
+        // Buscar el nuevo bloque
         const bloquesResponse = await fetch(`${API_URL}/bloques`);
         const bloques = await bloquesResponse.json();
         
-        const bloqueNuevo = bloques.find(b => 
-            b.actividad === nuevaActividad &&
-            b.fecha === nuevaFecha &&
-            b.hora.substring(0, 5) === nuevaHora &&
-            b.nombre_entrenador === nuevoEntrenador
-        );
+        let bloqueId = null;
+        let datosAdicionales = {};
         
-        if (!bloqueNuevo) {
-            showToast('❌ No existe ese horario. Tu reserva actual NO se ha cancelado. Intenta otra fecha/hora.');
-            return;
+        if (nuevoEntrenador === 'Sin entrenador') {
+            bloqueId = 'sin_entrenador';
+            datosAdicionales = {
+                actividad: nuevaActividad,
+                fecha: nuevaFecha,
+                hora: nuevaHora
+            };
+        } else {
+            const bloqueNuevo = bloques.find(b => 
+                b.actividad === nuevaActividad &&
+                b.fecha === nuevaFecha &&
+                b.hora.substring(0, 5) === nuevaHora &&
+                b.nombre_entrenador === nuevoEntrenador &&
+                b.cupos_disponibles > 0
+            );
+            
+            if (!bloqueNuevo) {
+                showToast('❌ No hay cupos disponibles para esa fecha/hora. Intenta con otro horario.');
+                return;
+            }
+            
+            bloqueId = bloqueNuevo.id;
         }
         
-        if (bloqueNuevo.cupos_disponibles <= 0) {
-            showToast('❌ No hay cupos disponibles. Tu reserva actual NO se ha cancelado. Intenta otro horario.');
-            return;
-        }
-        
-        // SEGUNDO: Si hay disponibilidad, cancelar la reserva actual
-        const deleteResponse = await fetch(`${API_URL}/reservas/${reservaACancelar.id}`, {
-            method: 'DELETE'
+        // Llamar al nuevo endpoint de reagendamiento
+        const response = await fetch(`${API_URL}/reservas/${reservaACancelar.id}/reagendar`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                usuario_id: currentUserId,
+                nuevo_bloque_id: bloqueId,
+                ...datosAdicionales
+            })
         });
         
-        const deleteData = await deleteResponse.json();
+        const data = await response.json();
         
-        if (!deleteData.success) {
-            showToast('❌ Error al cancelar la reserva anterior');
-            return;
+        if (data.success) {
+            showToast('✅ Reserva reagendada exitosamente. Te enviamos confirmación por email/SMS.');
+            cerrarTodosLosModales();
+            reservaACancelar = null;
+            await mostrarReservas();
+            await cargarHistorialDelServidor();
+        } else {
+            showToast(`❌ Error: ${data.error || 'No se pudo reagendar'}`);
         }
-        
-        // TERCERO: Guardar datos en sessionStorage para la nueva reserva
-        sessionStorage.setItem('reservaActividad', nuevaActividad);
-        sessionStorage.setItem('reservaFecha', nuevaFecha);
-        sessionStorage.setItem('reservaHora', nuevaHora);
-        sessionStorage.setItem('reservaEntrenador', nuevoEntrenador);
-        sessionStorage.setItem('bloque_id', bloqueNuevo.id);
-        sessionStorage.setItem('esReagendamiento', 'true'); // Marcar como reagendamiento
-        
-        // Cerrar modal y redirigir a confirmar-reserva
-        document.getElementById('modal-reagendar').style.display = 'none';
-        reservaACancelar = null;
-        
-        showToast('✅ Redirigiendo a confirmar nueva reserva...');
-        setTimeout(() => {
-            window.location.href = '/confirmar-reserva.html';
-        }, 1000);
         
     } catch (error) {
         console.error('Error:', error);
@@ -878,18 +925,78 @@ function mostrarCrearEntrenador() {
     document.getElementById('crear-entrenador-admin').style.display = 'block';
     document.getElementById('crear-bloque').style.display = 'none';
     document.getElementById('lista-bloques').style.display = 'none';
+    document.getElementById('configuracion-admin').style.display = 'none';
 }
 
 function mostrarCrearCupo() {
     document.getElementById('crear-entrenador-admin').style.display = 'none';
     document.getElementById('crear-bloque').style.display = 'block';
     document.getElementById('lista-bloques').style.display = 'none';
+    document.getElementById('configuracion-admin').style.display = 'none';
 }
 
 function mostrarListaBloques() {
     document.getElementById('crear-entrenador-admin').style.display = 'none';
     document.getElementById('crear-bloque').style.display = 'none';
     document.getElementById('lista-bloques').style.display = 'block';
+    document.getElementById('configuracion-admin').style.display = 'none';
+}
+
+async function mostrarConfiguracion() {
+    document.getElementById('crear-entrenador-admin').style.display = 'none';
+    document.getElementById('crear-bloque').style.display = 'none';
+    document.getElementById('lista-bloques').style.display = 'none';
+    document.getElementById('configuracion-admin').style.display = 'block';
+    
+    // Cargar precio actual
+    await cargarPrecioActual();
+}
+
+async function cargarPrecioActual() {
+    try {
+        const response = await fetch(`${API_URL}/admin/configuracion/precio_reserva`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const precio = data.valor;
+            document.getElementById('precio-reserva').value = precio;
+            document.getElementById('precio-actual-display').textContent = precio;
+        }
+    } catch (error) {
+        console.error('Error al cargar precio:', error);
+        showToast('❌ Error al cargar precio actual');
+    }
+}
+
+async function guardarPrecio() {
+    const precio = document.getElementById('precio-reserva').value;
+    
+    if (!precio || precio < 0) {
+        showToast('⚠️ Ingresa un precio válido');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/configuracion/precio_reserva`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ valor: precio })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('✅ Precio actualizado correctamente');
+            document.getElementById('precio-actual-display').textContent = precio;
+        } else {
+            showToast('❌ Error al guardar precio');
+        }
+    } catch (error) {
+        console.error('Error al guardar precio:', error);
+        showToast('❌ Error de conexión con el servidor');
+    }
 }
 
 async function crearEntrenador() {

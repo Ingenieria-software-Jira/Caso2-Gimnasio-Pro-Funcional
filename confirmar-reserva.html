@@ -204,7 +204,7 @@
             </div>
             <div class="detalle-item">
                 <span class="detalle-label">💰 Total a Pagar:</span>
-                <span class="detalle-valor precio-destacado" id="precio-reserva">$1 CLP</span>
+                <span class="detalle-valor precio-destacado" id="precio-reserva">Cargando...</span>
             </div>
         </div>
 
@@ -234,7 +234,7 @@
 
     <script>
         // Cargar datos de la reserva desde sessionStorage
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
             const datosReserva = JSON.parse(sessionStorage.getItem('datosReserva') || '{}');
             
             if (!datosReserva.bloque_id) {
@@ -243,12 +243,24 @@
                 return;
             }
 
+            // Obtener precio actualizado desde el servidor
+            let precioActual = 1; // Default
+            try {
+                const response = await fetch('http://localhost:5000/api/admin/configuracion/precio_reserva');
+                const data = await response.json();
+                if (data.valor) {
+                    precioActual = data.valor;
+                }
+            } catch (error) {
+                console.error('Error al obtener precio:', error);
+            }
+
             // Mostrar datos en la página
             document.getElementById('fecha-reserva').textContent = datosReserva.fecha || '-';
             document.getElementById('hora-reserva').textContent = datosReserva.hora || '-';
             document.getElementById('entrenador-reserva').textContent = datosReserva.entrenador || '-';
             document.getElementById('actividad-reserva').textContent = datosReserva.actividad || '-';
-            document.getElementById('precio-reserva').textContent = datosReserva.precio || '$1 CLP';
+            document.getElementById('precio-reserva').textContent = `$${precioActual} CLP`;
 
             // Habilitar botón de pago cuando se acepten términos
             document.getElementById('aceptar-terminos').addEventListener('change', (e) => {
@@ -277,15 +289,25 @@
             btnPagar.textContent = '⏳ Procesando...';
 
             try {
+                // Preparar datos para enviar al backend
+                const requestData = {
+                    usuario_id: datosReserva.usuario_id,
+                    bloque_id: datosReserva.bloque_id
+                };
+                
+                // Si es reserva sin entrenador, incluir datos adicionales
+                if (datosReserva.bloque_id === 'sin_entrenador') {
+                    requestData.actividad = datosReserva.actividad;
+                    requestData.fecha = datosReserva.fecha;
+                    requestData.hora = datosReserva.hora;
+                }
+                
                 const response = await fetch('http://localhost:5000/api/webpay/crear', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        usuario_id: datosReserva.usuario_id,
-                        bloque_id: datosReserva.bloque_id
-                    })
+                    body: JSON.stringify(requestData)
                 });
 
                 const data = await response.json();

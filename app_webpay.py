@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 import config
 import webpay_config
+import notificaciones
 
 # Importar SDK de Transbank
 from transbank.webpay.webpay_plus.transaction import Transaction
@@ -40,6 +41,27 @@ def get_db_connection():
         database=config.MYSQL_DB,
         cursorclass=pymysql.cursors.DictCursor
     )
+
+# Función para obtener el precio desde la base de datos
+def obtener_precio_reserva():
+    """Obtiene el precio de reserva desde la base de datos"""
+    try:
+        connection = get_db_connection()
+        cur = connection.cursor()
+        cur.execute("SELECT valor FROM configuracion WHERE nombre = 'precio_reserva'")
+        resultado = cur.fetchone()
+        cur.close()
+        connection.close()
+        
+        if resultado:
+            return int(resultado['valor'])
+        else:
+            # Si no existe en la BD, usar el valor por defecto de webpay_config
+            return webpay_config.PRECIO_RESERVA
+    except Exception as e:
+        print(f"Error al obtener precio desde BD: {e}")
+        # En caso de error, usar el valor por defecto
+        return webpay_config.PRECIO_RESERVA
 
 # ==================== USUARIOS ====================
 @app.route('/api/registro', methods=['POST'])
@@ -166,6 +188,63 @@ def admin_login():
             'username': admin['username'],
             'nombre': admin['nombre'],
             'role': 'admin'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/configuracion/<nombre>', methods=['GET'])
+def obtener_configuracion(nombre):
+    """Obtener valor de configuración"""
+    try:
+        connection = get_db_connection()
+        cur = connection.cursor()
+        
+        cur.execute("SELECT valor FROM configuracion WHERE nombre = %s", (nombre,))
+        config = cur.fetchone()
+        
+        cur.close()
+        connection.close()
+        
+        if not config:
+            return jsonify({'error': 'Configuración no encontrada'}), 404
+        
+        return jsonify({
+            'success': True,
+            'nombre': nombre,
+            'valor': config['valor']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/configuracion/<nombre>', methods=['PUT'])
+def actualizar_configuracion(nombre):
+    """Actualizar valor de configuración"""
+    try:
+        data = request.json
+        valor = data.get('valor')
+        
+        if valor is None:
+            return jsonify({'error': 'Valor es requerido'}), 400
+        
+        connection = get_db_connection()
+        cur = connection.cursor()
+        
+        # Actualizar o insertar
+        cur.execute("""
+            INSERT INTO configuracion (nombre, valor, descripcion)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE valor = %s, fecha_modificacion = CURRENT_TIMESTAMP
+        """, (nombre, str(valor), f'Configuración de {nombre}', str(valor)))
+        
+        connection.commit()
+        cur.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Configuración actualizada exitosamente'
         }), 200
         
     except Exception as e:
@@ -387,8 +466,27 @@ def crear_transaccion_webpay():
         connection = get_db_connection()
         cur = connection.cursor()
         
-        # Si viene bloque_id, obtener los datos del bloque
-        if bloque_id:
+        # Caso especial: Sin entrenador (reserva libre)
+        if bloque_id == 'sin_entrenador':
+            actividad = data.get('actividad')
+            fecha = data.get('fecha')
+            hora = data.get('hora')
+            
+            # Validar que vengan los datos necesarios desde sessionStorage
+            if not actividad or not fecha or not hora:
+                cur.close()
+                connection.close()
+                return jsonify({'error': 'Faltan datos para la reserva sin entrenador'}), 400
+            
+            # Formatear hora si es necesario (agregar :00 si solo tiene HH:MM)
+            if len(hora.split(':')) == 2:
+                hora = hora + ':00'
+            
+            entrenador_id = None  # Sin entrenador asignado
+            entrenador_nombre = 'Sin entrenador'
+        
+        # Si viene bloque_id normal, obtener los datos del bloque
+        elif bloque_id:
             cur.execute("""
                 SELECT b.*, e.nombre as nombre_entrenador, e.id as entrenador_id
                 FROM bloques b
@@ -428,7 +526,7 @@ def crear_transaccion_webpay():
         # Generar orden de compra única
         buy_order = f"GYM-{user_id}-{int(datetime.now().timestamp())}"
         session_id = str(user_id)
-        amount = webpay_config.PRECIO_RESERVA
+        amount = obtener_precio_reserva()  # Obtener precio desde la BD
         return_url = webpay_config.WEBPAY_RETURN_URL
         
         # Crear reserva temporal con estado pendiente
@@ -583,6 +681,46 @@ def confirmar_transaccion_webpay():
             
             connection.commit()
             
+            # Obtener datos de la reserva y usuario para notificación
+            cur.execute("""
+                SELECT 
+                    r.*, 
+                    u.username, u.email, u.telefono, u.nombre, u.apellido,
+                    e.nombre as nombre_entrenador
+                FROM reservas r
+                JOIN usuarios u ON r.usuario_id = u.id
+                LEFT JOIN entrenadores e ON r.entrenador_id = e.id
+                WHERE r.id = %s
+            """, (transaccion['reserva_id'],))
+            
+            reserva_completa = cur.fetchone()
+            
+            if reserva_completa:
+                # Preparar datos para notificación
+                usuario_data = {
+                    'nombre': reserva_completa.get('nombre') or reserva_completa.get('username'),
+                    'email': reserva_completa.get('email'),
+                    'telefono': reserva_completa.get('telefono')
+                }
+                
+                reserva_data = {
+                    'fecha': str(reserva_completa['fecha']),
+                    'hora': str(reserva_completa['hora'])[0:5],  # HH:MM
+                    'actividad': reserva_completa['actividad'],
+                    'entrenador': reserva_completa.get('nombre_entrenador') or 'Sin entrenador',
+                    'precio': transaccion['amount']
+                }
+                
+                # Enviar notificaciones (email + SMS)
+                try:
+                    resultado = notificaciones.notificar_reserva_confirmada(usuario_data, reserva_data)
+                    print(f"[NOTIF] Email: {'✓' if resultado['email'] else 'X'}, SMS: {'✓' if resultado['sms'] else 'X'}")
+                except Exception as e:
+                    print(f"[WARN] Error al enviar notificaciones: {e}")
+            
+            cur.close()
+            connection.close()
+            
             # Redirigir al usuario a una página de éxito (mismo directorio)
             return redirect(f"/pago-exitoso.html?reserva_id={transaccion['reserva_id']}")
         else:
@@ -649,13 +787,27 @@ def cancelar_reserva(reserva_id):
         connection = get_db_connection()
         cur = connection.cursor()
         
-        cur.execute("SELECT * FROM reservas WHERE id = %s", (reserva_id,))
+        # Obtener datos completos de la reserva antes de cancelar
+        cur.execute("""
+            SELECT 
+                r.*, 
+                u.username, u.email, u.telefono, u.nombre, u.apellido,
+                e.nombre as nombre_entrenador
+            FROM reservas r
+            JOIN usuarios u ON r.usuario_id = u.id
+            LEFT JOIN entrenadores e ON r.entrenador_id = e.id
+            WHERE r.id = %s
+        """, (reserva_id,))
         reserva = cur.fetchone()
         
         if not reserva:
             cur.close()
             connection.close()
             return jsonify({'error': 'Reserva no encontrada'}), 404
+        
+        # Determinar motivo de cancelación (del request body)
+        data = request.json or {}
+        motivo = data.get('motivo', 'cancelacion')  # 'cancelacion' o 'reembolso'
         
         cur.execute("""
             UPDATE reservas 
@@ -664,6 +816,27 @@ def cancelar_reserva(reserva_id):
         """, (reserva_id,))
         
         connection.commit()
+        
+        # Enviar notificaciones
+        usuario_data = {
+            'nombre': reserva.get('nombre') or reserva.get('username'),
+            'email': reserva.get('email'),
+            'telefono': reserva.get('telefono')
+        }
+        
+        reserva_data = {
+            'fecha': str(reserva['fecha']),
+            'hora': str(reserva['hora'])[0:5],
+            'actividad': reserva['actividad'],
+            'entrenador': reserva.get('nombre_entrenador') or 'Sin entrenador'
+        }
+        
+        try:
+            resultado = notificaciones.notificar_cancelacion(usuario_data, reserva_data, motivo)
+            print(f"[NOTIF] Cancelación - Email: {'✓' if resultado['email'] else 'X'}, SMS: {'✓' if resultado['sms'] else 'X'}")
+        except Exception as e:
+            print(f"[WARN] Error al enviar notificaciones de cancelación: {e}")
+        
         cur.close()
         connection.close()
         
@@ -843,6 +1016,129 @@ def get_alumnos_entrenador(nombre):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ==================== REAGENDAR RESERVA ====================
+@app.route('/api/reservas/<int:reserva_id>/reagendar', methods=['POST'])
+def reagendar_reserva(reserva_id):
+    """
+    Endpoint específico para reagendamiento que cancela la reserva vieja,
+    crea una nueva y envía notificación de reagendamiento
+    """
+    try:
+        data = request.json
+        nuevo_bloque_id = data.get('nuevo_bloque_id')
+        usuario_id = data.get('usuario_id')
+        
+        if not nuevo_bloque_id or not usuario_id:
+            return jsonify({'error': 'Faltan datos requeridos'}), 400
+        
+        connection = get_db_connection()
+        cur = connection.cursor()
+        
+        # 1. Obtener datos de la reserva vieja
+        cur.execute("""
+            SELECT 
+                r.*, 
+                u.username, u.email, u.telefono, u.nombre, u.apellido,
+                e.nombre as nombre_entrenador
+            FROM reservas r
+            JOIN usuarios u ON r.usuario_id = u.id
+            LEFT JOIN entrenadores e ON r.entrenador_id = e.id
+            WHERE r.id = %s AND r.usuario_id = %s
+        """, (reserva_id, usuario_id))
+        reserva_vieja = cur.fetchone()
+        
+        if not reserva_vieja:
+            cur.close()
+            connection.close()
+            return jsonify({'error': 'Reserva no encontrada'}), 404
+        
+        # 2. Obtener datos del nuevo bloque
+        if nuevo_bloque_id == 'sin_entrenador':
+            # Caso sin entrenador
+            nueva_actividad = data.get('actividad')
+            nueva_fecha = data.get('fecha')
+            nueva_hora = data.get('hora')
+            nuevo_entrenador_id = None
+            nuevo_entrenador_nombre = 'Sin entrenador'
+            
+            if len(nueva_hora.split(':')) == 2:
+                nueva_hora = nueva_hora + ':00'
+        else:
+            # Caso con entrenador (bloque normal)
+            cur.execute("""
+                SELECT b.*, e.nombre as nombre_entrenador, e.id as entrenador_id
+                FROM bloques b
+                LEFT JOIN entrenadores e ON b.entrenador_id = e.id
+                WHERE b.id = %s
+            """, (nuevo_bloque_id,))
+            nuevo_bloque = cur.fetchone()
+            
+            if not nuevo_bloque:
+                cur.close()
+                connection.close()
+                return jsonify({'error': 'Nuevo bloque no encontrado'}), 404
+            
+            nueva_actividad = nuevo_bloque['actividad']
+            nueva_fecha = str(nuevo_bloque['fecha'])
+            nueva_hora = str(nuevo_bloque['hora'])
+            nuevo_entrenador_id = nuevo_bloque['entrenador_id']
+            nuevo_entrenador_nombre = nuevo_bloque['nombre_entrenador']
+        
+        # 3. Cancelar reserva vieja
+        cur.execute("""
+            UPDATE reservas 
+            SET estado = 'cancelada', fecha_modificacion = NOW()
+            WHERE id = %s
+        """, (reserva_id,))
+        
+        # 4. Crear nueva reserva con estado 'activa' (ya pagó antes)
+        cur.execute("""
+            INSERT INTO reservas (usuario_id, actividad, fecha, hora, entrenador_id, estado, fecha_creacion)
+            VALUES (%s, %s, %s, %s, %s, 'activa', NOW())
+        """, (usuario_id, nueva_actividad, nueva_fecha, nueva_hora, nuevo_entrenador_id))
+        
+        nueva_reserva_id = cur.lastrowid
+        connection.commit()
+        
+        # 5. Enviar notificación de reagendamiento
+        usuario_data = {
+            'nombre': reserva_vieja.get('nombre') or reserva_vieja.get('username'),
+            'email': reserva_vieja.get('email'),
+            'telefono': reserva_vieja.get('telefono')
+        }
+        
+        reserva_vieja_data = {
+            'fecha': str(reserva_vieja['fecha']),
+            'hora': str(reserva_vieja['hora'])[0:5],
+            'actividad': reserva_vieja['actividad'],
+            'entrenador': reserva_vieja.get('nombre_entrenador') or 'Sin entrenador'
+        }
+        
+        reserva_nueva_data = {
+            'fecha': nueva_fecha,
+            'hora': nueva_hora[0:5],
+            'actividad': nueva_actividad,
+            'entrenador': nuevo_entrenador_nombre
+        }
+        
+        try:
+            resultado = notificaciones.notificar_reagendamiento(usuario_data, reserva_vieja_data, reserva_nueva_data)
+            print(f"[NOTIF] Reagendamiento - Email: {'✓' if resultado['email'] else 'X'}, SMS: {'✓' if resultado['sms'] else 'X'}")
+        except Exception as e:
+            print(f"[WARN] Error al enviar notificaciones de reagendamiento: {e}")
+        
+        cur.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Reserva reagendada exitosamente',
+            'nueva_reserva_id': nueva_reserva_id
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ==================== PROGRESO (CLIENTE) ====================
 @app.route('/api/progreso/<int:user_id>', methods=['GET'])
 def get_progreso(user_id):
@@ -912,11 +1208,12 @@ def index():
     return send_from_directory('.', 'index.html')
 
 if __name__ == '__main__':
+    precio_actual = obtener_precio_reserva()
     print("=" * 60)
     print("GIMNASIO PRO FUNCIONAL - BACKEND CON WEBPAY")
     print("=" * 60)
     print(f"Ambiente Webpay: {webpay_config.WEBPAY_ENVIRONMENT}")
-    print(f"Precio por reserva: ${webpay_config.PRECIO_RESERVA:,} CLP")
+    print(f"Precio por reserva: ${precio_actual:,} CLP (desde Base de Datos)")
     print("=" * 60)
     app.run(debug=config.DEBUG, port=config.PORT)
 

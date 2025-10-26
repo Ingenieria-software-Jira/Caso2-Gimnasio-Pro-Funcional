@@ -59,11 +59,13 @@
                 <option value="Fuerza">Fuerza</option>
             </select>
             <input type="date" id="fecha" min="">
-            <select id="hora"></select>
             <select id="entrenador">
+                <option value="">-- Selecciona entrenador --</option>
+                <option value="Sin entrenador">🏋️ Entrenar solo (Sin entrenador)</option>
                 <option value="Ricardo Meruane">Ricardo Meruane</option>
                 <option value="George Harris">George Harris</option>
             </select>
+            <select id="hora"></select>
             <button onclick="reservarClase()">Reservar y pagar</button>
         </div>
 
@@ -108,6 +110,7 @@
         <button onclick="mostrarCrearEntrenador()">👨‍🏫 Crear Entrenador</button>
         <button onclick="mostrarCrearCupo()">📅 Crear Cupo</button>
         <button onclick="mostrarListaBloques()">📋 Ver Bloques</button>
+        <button onclick="mostrarConfiguracion()">⚙️ Configuración de Precios</button>
 
         <div id="crear-entrenador-admin" style="display:none;">
             <h3>Crear Nuevo Entrenador</h3>
@@ -131,6 +134,20 @@
         <div id="lista-bloques">
             <h3>Cupos/Bloques Creados</h3>
             <ul id="lista-bloques"></ul>
+        </div>
+
+        <div id="configuracion-admin" style="display:none;">
+            <h3>⚙️ Configuración del Sistema</h3>
+            <div class="form-reserva">
+                <label for="precio-reserva" style="display:block; margin-bottom:10px; font-weight:bold;">
+                    💵 Precio por Reserva (CLP):
+                </label>
+                <input type="number" id="precio-reserva" placeholder="Precio en CLP" min="0" step="1">
+                <small style="display:block; margin-top:5px; color:#666;">
+                    Este es el precio que se cobrará por cada reserva. Valor actual: <strong id="precio-actual-display">Cargando...</strong> CLP
+                </small>
+                <button onclick="guardarPrecio()">💾 Guardar Precio</button>
+            </div>
         </div>
     </div>
 
@@ -177,11 +194,13 @@
                 <option value="Fuerza">Fuerza</option>
             </select>
             <input type="date" id="reagendar-fecha" min="">
-            <select id="reagendar-hora"></select>
             <select id="reagendar-entrenador">
+                <option value="">-- Selecciona entrenador --</option>
+                <option value="Sin entrenador">🏋️ Entrenar solo (Sin entrenador)</option>
                 <option value="Ricardo Meruane">Ricardo Meruane</option>
                 <option value="George Harris">George Harris</option>
             </select>
+            <select id="reagendar-hora"></select>
             
             <div class="modal-buttons">
                 <button onclick="confirmarReagendar()" class="btn-confirmar">✅ Confirmar Reagendado</button>
